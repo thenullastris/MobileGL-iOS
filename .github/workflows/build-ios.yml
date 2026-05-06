@@ -19,6 +19,11 @@ jobs:
       - name: Install Ninja
         run: brew install ninja
 
+      - name: Init glslang SPIRV-Tools sources
+        run: |
+          cd 3rdparty/glslang
+          python3 update_glslang_sources.py
+
       - name: Configure CMake for iOS
         run: |
           cmake -S . -B build-ios \
@@ -33,7 +38,8 @@ jobs:
             -DMOBILEGL_BUILD_BENCHMARK=OFF \
             -DMOBILEGL_FORCE_RELEASE_OPT=ON \
             -DMOBILEGL_ENABLE_TRACY=OFF \
-            -DBUILD_SHARED_LIBS=OFF
+            -DBUILD_SHARED_LIBS=OFF \
+            -DENABLE_OPT=OFF
 
       - name: Build
         run: cmake --build build-ios --config Release --parallel
