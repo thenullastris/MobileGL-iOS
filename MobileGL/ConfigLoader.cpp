@@ -5,48 +5,57 @@
 //   https://www.gnu.org/licenses/lgpl-3.0.txt
 // SPDX-License-Identifier: LGPL-3.0-only
 // End of Source File Header
-
 #include "Config.h"
-
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_IOS
+#include <Foundation/Foundation.h>
+#endif
+#endif
 namespace MobileGL::MG_ConfigLoader {
     static UniquePtr<UnorderedMap<String, String>> acceptedEnvVariablesMap;
-
     static Bool IsAcceptedPrefix(const String& key) {
         return (key.compare(0, 6, "LIBGL_") == 0 || key.compare(0, 9, "MOBILEGL_") == 0);
     }
-
     inline void InitializeAcceptedEnvVariables() {
         if (!acceptedEnvVariablesMap) {
             acceptedEnvVariablesMap = MakeUnique<UnorderedMap<String, String>>();
         } else {
             acceptedEnvVariablesMap->clear();
         }
-
+#if defined(__APPLE__) && TARGET_OS_IOS
+        // ::environ is not available on iOS — use NSProcessInfo instead
+        NSDictionary<NSString*, NSString*>* nsEnv = [[NSProcessInfo processInfo] environment];
+        for (NSString* nsKey in nsEnv) {
+            String key([nsKey UTF8String]);
+            if (IsAcceptedPrefix(key)) {
+                String value([[nsEnv objectForKey:nsKey] UTF8String]);
+                (*acceptedEnvVariablesMap)[key] = value;
+                MGLOG_D("Config: Accepted env variable: %s=%s", key.c_str(), value.c_str());
+            }
+        }
+#else
         char** envPtr = nullptr;
-
 #ifdef _WIN32
         envPtr = _environ;
-#else // POSIX
+#else // POSIX (macOS, Linux)
         envPtr = ::environ;
 #endif
-
         if (envPtr == nullptr) return;
-
         for (char** env = envPtr; *env != nullptr; ++env) {
             String entry(*env);
             SizeT pos = entry.find('=');
             if (pos != String::npos) {
                 String key = entry.substr(0, pos);
                 String value = entry.substr(pos + 1);
-
                 if (IsAcceptedPrefix(key)) {
                     (*acceptedEnvVariablesMap)[key] = value;
                     MGLOG_D("Config: Accepted env variable: %s=%s", key.c_str(), value.c_str());
                 }
             }
         }
+#endif
     }
-
     inline void QueryEnvVariable(const String& key, String& outValue, const String& defaultValue) {
         auto it = acceptedEnvVariablesMap->find(key);
         if (it != acceptedEnvVariablesMap->end()) {
@@ -55,7 +64,6 @@ namespace MobileGL::MG_ConfigLoader {
             outValue = defaultValue;
         }
     }
-
     inline void InitBackendType() {
         String backendTypeStr;
         QueryEnvVariable("MOBILEGL_BACKEND_TYPE", backendTypeStr, "DirectGLES");
@@ -71,13 +79,10 @@ namespace MobileGL::MG_ConfigLoader {
         MG_Config::ActiveBackendType = BackendType::Unknown;
 #undef ENTRY
     }
-
     void Init() {
         MGLOG_D("Loading configuration from environment variables...");
         InitializeAcceptedEnvVariables();
-
         InitBackendType();
-
         // Destroy the map since we won't need it anymore
         acceptedEnvVariablesMap.reset();
     }
