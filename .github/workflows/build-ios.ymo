@@ -1,0 +1,67 @@
+name: Build MobileGL for iOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+
+jobs:
+  build-ios:
+    name: Build static lib (iOS arm64)
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      - name: Configure CMake for iOS
+        run: |
+          cmake -S . -B build-ios \
+            -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMOBILEGL_BUILD_TEST=OFF \
+            -DMOBILEGL_BUILD_BENCHMARK=OFF \
+            -DMOBILEGL_FORCE_RELEASE_OPT=ON \
+            -DMOBILEGL_ENABLE_TRACY=OFF \
+            -DBUILD_SHARED_LIBS=OFF
+
+      - name: Build
+        run: cmake --build build-ios --config Release --parallel
+
+      - name: Collect output
+        run: |
+          mkdir -p dist/lib dist/include
+          # Static lib
+          find build-ios -name "libMobileGL_s.a" -exec cp {} dist/lib/ \;
+          # Headers
+          cp -r include/ dist/include/
+          # Package
+          cd dist
+          zip -r ../MobileGL-iOS-arm64.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MobileGL-iOS-arm64
+          path: MobileGL-iOS-arm64.zip
+
+      - name: Create Release
+        if: github.ref == 'refs/heads/dev'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: iOS Build ${{ github.run_number }}
+          files: MobileGL-iOS-arm64.zip
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
